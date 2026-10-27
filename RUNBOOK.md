@@ -429,8 +429,8 @@ kubectl logs deploy/uploadapp ; kubectl logs statefulset/uploadapp-mongodb
 kubectl get ingress
 
 # Flux (lab 2)
-flux get all
-flux get sources git ; flux get helmreleases
+flux get all -n default                  # the app objects live in "default"; flux defaults to flux-system
+flux get sources git -n default ; flux get helmreleases -n default
 flux logs --level=error
 kubectl describe helmrelease uploadapp
 ```
@@ -639,13 +639,13 @@ spec:
 
 ```bash
 kubectl apply -f cicd/upload-app-demo/23-fluxcd-uploadapp.yaml
-flux get sources git
-flux get helmreleases
+flux get sources git -n default            # -n default: flux commands default to flux-system
+flux get helmreleases -n default
 kubectl get pods -w                        # Ctrl-C when uploadapp and mongodb are Running
 curl -s -H 'Host: uploadapp.mydomain.local' http://<INGRESS_ADDRESS>/info   # BuildVersion 1.0.2
 ```
 
-Alternative to `git-credentials`: let Flux create its own secret with `flux create secret git uploadapp-git --url=ssh://git@github.com/<GITHUB_USER>/fri-uniza-onpk-cicd.git --private-key-file=$HOME/lab-secrets/upload-app-deploy`, and set `secretRef.name: uploadapp-git`.
+Alternative to `git-credentials`: let Flux create its own secret with `flux create secret git uploadapp-git -n default --url=ssh://git@github.com/<GITHUB_USER>/fri-uniza-onpk-cicd.git --private-key-file=$HOME/lab-secrets/upload-app-deploy`, and set `secretRef.name: uploadapp-git`.
 
 ## 2.5 Close the loop: bump, rebuild, reconcile, roll back
 
@@ -663,8 +663,8 @@ tkn pipelinerun logs -f --last
 The interval is 1 minute. To force it:
 
 ```bash
-flux reconcile source git uploadapp-git-repo
-flux get helmreleases --watch          # Ctrl-C when Ready with the new revision
+flux reconcile source git uploadapp-git-repo -n default
+flux get helmreleases -n default --watch          # Ctrl-C when Ready with the new revision
 kubectl get pods -w
 curl -s -H 'Host: uploadapp.mydomain.local' http://<INGRESS_ADDRESS>/info   # BuildVersion 1.0.3
 helm history uploadapp                 # Flux-driven revisions
@@ -678,15 +678,15 @@ git pull
 git log --oneline -3                   # top: "chore: update image.tag to version 1.0.3"
 git revert --no-edit HEAD
 git push
-flux reconcile source git uploadapp-git-repo
-flux get helmreleases --watch
+flux reconcile source git uploadapp-git-repo -n default
+flux get helmreleases -n default --watch
 curl -s -H 'Host: uploadapp.mydomain.local' http://<INGRESS_ADDRESS>/info   # back to 1.0.2
 ```
 
 ### 4. Discuss
 
 - Git is the source of truth. Image 1.0.3 still exists in the registry, but nothing references it.
-- `flux suspend helmrelease uploadapp` / `flux resume helmrelease uploadapp`: change something by hand while suspended, then resume and watch Flux undo the drift.
+- `flux suspend helmrelease uploadapp -n default` / `flux resume helmrelease uploadapp -n default`: change something by hand while suspended, then resume and watch Flux undo the drift.
 
 ## 2.6 Optional: Tekton Triggers
 
@@ -715,7 +715,7 @@ kubectl apply -f cicd/github-trigger/rbac.yml
 - `TriggerBinding github-pr-binding`: takes `gitrevision` from `body.pull_request.head.sha`.
 - `TriggerTemplate github-template`: creates a PipelineRun of the Demo 1 pipeline `clone-build-push-deploy` for that commit, with the commit sha as image tag.
 
-The Demo 1 pipeline deploys with plain Helm, while Flux also manages `uploadapp` in lab 2. Run this either before 2.4 or with the HelmRelease suspended (`flux suspend helmrelease uploadapp`), so the two don't fight.
+The Demo 1 pipeline deploys with plain Helm, while Flux also manages `uploadapp` in lab 2. Run this either before 2.4 or with the HelmRelease suspended (`flux suspend helmrelease uploadapp -n default`), so the two don't fight.
 
 ### 4. Fire a fake GitHub event
 
