@@ -10,3 +10,4 @@ module.exports = {
   database: "bezkoder_files_db",
   imgBucket: "photos",
 };
+
