@@ -93,6 +93,11 @@ git push -u origin main
 
 If you pick another repo name, also replace `fri-uniza-onpk-cicd` in the `app/`, `cicd/` and `helm/` files after step 2.
 
+**Public or private?** Both work. A fork of a public repo is always public. If you want your copy private, use Option B and create the empty repo as **Private**. Nothing else changes:
+- The pipelines (git-clone, git push) and Flux reach the repo through your SSH deploy key (1.6 step 3), which works for private repos.
+- The image package on ghcr.io is private by default either way, and the cluster pulls it with the `ghcr-pull` secret (1.7).
+- Everything else the lab downloads (Tekton, catalog tasks, Flux, the MongoDB image) is public.
+
 The vendored MongoDB chart must be in the repo. The pipelines and Flux use it instead of downloading it:
 
 ```bash
@@ -183,14 +188,27 @@ Why MongoDB matters: `app/src/middleware/upload.js` connects to MongoDB when the
 
 ### 2. Create a GitHub token for the container registry
 
-buildah pushes the image to `ghcr.io` with a GitHub **classic** personal access token (PAT). Fine-grained tokens don't work with the container registry.
+Your code lives in your GitHub repo, and the image the pipeline builds lives next to it in the GitHub Container Registry, `ghcr.io/<GITHUB_USER>/fri-uniza-onpk-cicd`. buildah pushes there with a GitHub **classic** personal access token (PAT). Fine-grained tokens don't work with the container registry.
 
-1. GitHub → your avatar → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token (classic)**.
+1. Open https://github.com/settings/tokens/new?scopes=write:packages&description=onpk-lab-ghcr. This pre-fills the form. Manual path: GitHub → your avatar → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token** → **Generate new token (classic)**.
 2. Note: `onpk-lab-ghcr`. Expiration: 30 days.
-3. Scopes: tick **`write:packages`** (this also selects `read:packages`). Nothing else is needed.
-4. **Generate token** and copy it (`ghp_…`). You only see it once.
+3. Scopes: only **`write:packages`** (this also selects `read:packages`). Don't tick `repo` or anything else; git access goes through the deploy key, not this token.
+4. Click **Generate token** and copy it (`ghp_…`). GitHub shows it only once. If you lose it, delete it and generate a new one.
 
-The same token pushes (buildah) and pulls (the cluster) the image. The first push creates a **private** package `fri-uniza-onpk-cicd` under your account; the `LABEL` in `app/Dockerfile` links it to your fork.
+Check that the token works and has the right scope (paste it when prompted; it isn't echoed):
+
+```bash
+read -rs GHCR_TOKEN
+curl -sI -H "Authorization: Bearer $GHCR_TOKEN" https://api.github.com/user | grep -i '^x-oauth-scopes'
+# x-oauth-scopes: write:packages     (read:packages may also be listed)
+unset GHCR_TOKEN
+```
+
+No `x-oauth-scopes` line, or `HTTP 401`: the token is wrong or expired.
+
+The same token pushes the image (buildah) and pulls it (the cluster); both secrets are created in 1.7. The first push creates a **private** package `fri-uniza-onpk-cicd` under your account. The `LABEL org.opencontainers.image.source` in `app/Dockerfile` links the package to your repo, so you'll see it on your repo page under **Packages**.
+
+Treat the token like a password: don't commit it, don't paste it into YAML files in the repo, and delete it after the course (see Cleanup).
 
 ### 3. Create a GitHub deploy key with write access
 
