@@ -13,7 +13,7 @@ Commands are bash, run from the root of your clone unless stated otherwise. On W
 
 ---
 
-# PART 1: LAB 1 (TODAY)
+# PART 1: LAB 1 (27.10.2026)
 
 ## 1.1 Install the tools
 
@@ -457,7 +457,7 @@ kubectl describe helmrelease uploadapp
 
 ---
 
-# PART 2: LAB 2 (NEXT WEEK): Tekton CI + Flux CD (GitOps)
+# PART 2: LAB 2 (3.11.2026): Tekton CI + Flux CD (GitOps)
 
 The CI pipeline builds and pushes the image, then **commits the new tag** into `helm/uploadapp/values-uploadapp.yaml` and pushes to GitHub. Flux watches the repo and deploys the HelmRelease. The pipeline never touches the cluster's deployments.
 
