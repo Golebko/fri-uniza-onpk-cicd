@@ -1,0 +1,99 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: clone-build-push-deploy
+spec:
+  description: |
+    Clone a git repo, add build info, build and push an image with buildah,
+    deploy with helm.
+  params:
+    - name: repo-url
+      type: string
+      description: "Git repository url"
+    - name: repo-revision
+      type: string
+      description: "Git revision to fetch (branch, tag, commit, ...)"
+    - name: image-name
+      type: string
+      description: "Target image name, e.g. docker.io/<DOCKERHUB_USER>/upload-app"
+    - name: image-tag
+      type: string
+      description: "Target image tag"
+    - name: build-extra-args
+      type: string
+      default: ""
+      description: "Extra buildah bud args"
+  workspaces:
+    - name: shared-data
+    - name: git-credentials
+    - name: dockerconfig
+  tasks:
+    - name: fetch-source
+      taskRef:
+        name: git-clone
+      params:
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.repo-revision)
+      workspaces:
+        - name: output
+          workspace: shared-data
+        - name: ssh-directory
+          workspace: git-credentials
+    - name: add-build-info
+      runAfter: [ "fetch-source" ]
+      taskSpec:
+        steps:
+          - name: add-build-info
+            image: alpine:3.18
+            script: |
+              #!/usr/bin/env sh
+              echo "BUILD_TIME=\"$(date)\"" > $(workspaces.source.path)/app/src/.env
+              echo "BUILD_VERSION=\"$(params.image-tag)\"" >> $(workspaces.source.path)/app/src/.env
+          - name: check
+            image: alpine:3.18
+            command: [ "cat" ]
+            args:
+              - "$(workspaces.source.path)/app/src/.env"
+      workspaces:
+        - name: source
+          workspace: shared-data
+    - name: buildah-build
+      runAfter: [ "add-build-info" ]
+      taskRef:
+        name: buildah
+      params:
+        - name: IMAGE
+          value: "$(params.image-name):$(params.image-tag)"
+        - name: CONTEXT
+          value: "./app"
+        - name: DOCKERFILE
+          value: "./app/Dockerfile"
+        - name: BUILD_EXTRA_ARGS
+          value: "$(params.build-extra-args)"
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: deploy-app
+      runAfter: [ "buildah-build" ]
+      taskSpec:
+        steps:
+          - name: helm-lint
+            image: alpine/helm:3.16
+            script: |
+              cd $(workspaces.source.path)/helm/uploadapp/
+              helm dependency list
+              helm lint . --values ./values-uploadapp.yaml
+          - name: helm-deploy
+            image: alpine/helm:3.16
+            script: |
+              cd $(workspaces.source.path)/helm/uploadapp/
+              helm upgrade --install uploadapp . --values ./values-uploadapp.yaml \
+                --set image.repository=$(params.image-name) --set image.tag=$(params.image-tag) \
+                --wait --timeout 10m
+      workspaces:
+        - name: source
+          workspace: shared-data

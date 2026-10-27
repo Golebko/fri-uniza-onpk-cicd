@@ -1,0 +1,137 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: upload-app-gitops-pipeline
+spec:
+  description: |
+    Clone, add build info, build and push with buildah, bump image.tag in
+    helm/uploadapp/values-uploadapp.yaml and push the commit back to git.
+  params:
+    - name: repo-url
+      type: string
+      description: "SSH url of YOUR repo, e.g. git@github.com:<GITHUB_USER>/fri-uniza-onpk-cicd.git"
+    - name: repo-branch
+      type: string
+      default: "main"
+    - name: image-name
+      type: string
+      description: "Target image name, e.g. docker.io/<DOCKERHUB_USER>/upload-app"
+    - name: image-tag
+      type: string
+    - name: git-user-name
+      type: string
+      default: "tekton-bot"
+    - name: git-user-email
+      type: string
+      default: "tekton-bot@example.invalid"
+    - name: build-extra-args
+      type: string
+      default: ""
+  workspaces:
+    - name: shared-data
+    - name: git-credentials
+    - name: dockerconfig
+  tasks:
+    - name: fetch-source
+      taskRef:
+        name: git-clone
+      params:
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.repo-branch)
+      workspaces:
+        - name: output
+          workspace: shared-data
+        - name: ssh-directory
+          workspace: git-credentials
+    - name: add-build-info
+      runAfter: [ "fetch-source" ]
+      taskSpec:
+        steps:
+          - name: add-build-info
+            image: alpine:3.18
+            script: |
+              #!/usr/bin/env sh
+              echo "BUILD_TIME=\"$(date)\"" > $(workspaces.source.path)/app/src/.env
+              echo "BUILD_VERSION=\"$(params.image-tag)\"" >> $(workspaces.source.path)/app/src/.env
+          - name: check
+            image: alpine:3.18
+            command: [ "cat" ]
+            args:
+              - "$(workspaces.source.path)/app/src/.env"
+      workspaces:
+        - name: source
+          workspace: shared-data
+    - name: buildah-build
+      runAfter: [ "add-build-info" ]
+      taskRef:
+        name: buildah
+      params:
+        - name: IMAGE
+          value: "$(params.image-name):$(params.image-tag)"
+        - name: CONTEXT
+          value: "./app"
+        - name: DOCKERFILE
+          value: "./app/Dockerfile"
+        - name: BUILD_EXTRA_ARGS
+          value: "$(params.build-extra-args)"
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: dockerconfig
+          workspace: dockerconfig
+    - name: update-helm-values
+      runAfter: [ "buildah-build" ]
+      taskSpec:
+        steps:
+          - name: update-version
+            image: alpine:3.18
+            script: |
+              #!/usr/bin/env sh
+              set -e
+              apk add --no-cache yq
+              cd $(workspaces.source.path)/helm/uploadapp/
+              yq -i '.image.repository = "$(params.image-name)"' ./values-uploadapp.yaml
+              yq -i '.image.tag = "$(params.image-tag)"' ./values-uploadapp.yaml
+          - name: check
+            image: alpine:3.18
+            command: [ "cat" ]
+            args:
+              - "$(workspaces.source.path)/helm/uploadapp/values-uploadapp.yaml"
+          - name: helm-lint
+            image: alpine/helm:3.16
+            script: |
+              cd $(workspaces.source.path)/helm/uploadapp/
+              helm dependency list
+              helm lint . --values ./values-uploadapp.yaml
+      workspaces:
+        - name: source
+          workspace: shared-data
+    - name: git-push
+      runAfter: [ "update-helm-values" ]
+      taskSpec:
+        steps:
+          - name: git-push
+            image: alpine/git:2.45.2
+            script: |
+              set -e
+              cp -R "$(workspaces.ssh-directory.path)" /root/.ssh
+              chmod 700 /root/.ssh
+              chmod -R 400 /root/.ssh/*
+
+              cd $(workspaces.source.path)
+              git config --global --add safe.directory $(workspaces.source.path)
+              git config --global user.name  "$(params.git-user-name)"
+              git config --global user.email "$(params.git-user-email)"
+
+              git checkout $(params.repo-branch)
+              git add ./helm/uploadapp/values-uploadapp.yaml
+              # no-op if the tag didn't change (rerun with the same image-tag)
+              git diff --cached --quiet || git commit -m 'chore: update image.tag to version $(params.image-tag)'
+              git push origin $(params.repo-branch)
+      workspaces:
+        - name: source
+          workspace: shared-data
+        - name: ssh-directory
+          workspace: git-credentials

@@ -1,0 +1,82 @@
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: github-listener
+spec:
+  serviceAccountName: tekton-triggers-example-sa
+  triggers:
+    - name: github-listener
+      interceptors:
+        - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: github-secret
+                secretKey: secretToken
+            - name: "eventTypes"
+              value: ["pull_request"]
+        - name: "only when PRs are opened"
+          ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: "body.action in ['opened', 'synchronize', 'reopened']"
+      bindings:
+        - ref: github-pr-binding
+      template:
+        ref: github-template
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: github-pr-binding
+spec:
+  params:
+    - name: gitrevision
+      value: $(body.pull_request.head.sha)
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: github-template
+spec:
+  params:
+    - name: gitrevision
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: clone-build-push-deploy-trigger-
+      spec:
+        serviceAccountName: pipeline-sa
+        pipelineRef:
+          name: clone-build-push-deploy
+        podTemplate:
+          securityContext:
+            fsGroup: 65532
+        params:
+          - name: repo-url
+            value: git@github.com:<GITHUB_USER>/fri-uniza-onpk-cicd.git
+          - name: repo-revision
+            value: $(tt.params.gitrevision)
+          - name: image-name
+            value: docker.io/<DOCKERHUB_USER>/upload-app
+          - name: image-tag
+            value: $(tt.params.gitrevision)
+        workspaces:
+          - name: shared-data
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: git-credentials
+            secret:
+              secretName: git-credentials
+          - name: dockerconfig
+            secret:
+              secretName: docker-credentials

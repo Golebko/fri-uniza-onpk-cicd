@@ -1,0 +1,31 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: uploadapp-git-repo
+  namespace: default
+spec:
+  interval: 1m
+  url: ssh://git@github.com/<GITHUB_USER>/fri-uniza-onpk-cicd.git   # ssh:// form, "/" not ":"
+  ref:
+    branch: main
+  secretRef:
+    name: git-credentials                                           # uses identity + known_hosts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: uploadapp          # keep: the chart hardcodes DB_HOST=uploadapp-mongodb.<namespace>
+  namespace: default
+spec:
+  interval: 1m
+  timeout: 10m
+  chart:
+    spec:
+      chart: helm/uploadapp
+      reconcileStrategy: Revision
+      valuesFiles:
+        - ./helm/uploadapp/values.yaml
+        - ./helm/uploadapp/values-uploadapp.yaml
+      sourceRef:
+        kind: GitRepository
+        name: uploadapp-git-repo

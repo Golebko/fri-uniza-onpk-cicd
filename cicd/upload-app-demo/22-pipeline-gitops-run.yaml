@@ -1,0 +1,37 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: upload-app-gitops-pipeline-run-
+spec:
+  serviceAccountName: pipeline-sa
+  pipelineRef:
+    name: upload-app-gitops-pipeline
+  podTemplate:
+    securityContext:
+      fsGroup: 65532
+  params:
+    - name: repo-url
+      value: git@github.com:<GITHUB_USER>/fri-uniza-onpk-cicd.git    # your fork (SSH url)
+    - name: repo-branch
+      value: "main"
+    - name: image-name
+      value: "docker.io/<DOCKERHUB_USER>/upload-app"
+    - name: image-tag
+      value: "1.0.2"                                                 # bump on every run
+    - name: git-user-email
+      value: "<GITHUB_USER>@users.noreply.github.com"
+  workspaces:
+    - name: shared-data
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+    - name: git-credentials
+      secret:
+        secretName: git-credentials
+    - name: dockerconfig
+      secret:
+        secretName: docker-credentials

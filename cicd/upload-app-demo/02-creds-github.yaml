@@ -1,0 +1,25 @@
+# Git (GitHub deploy key) credentials: do NOT put real keys in this repo.
+#
+# This file is intentionally empty (no Kubernetes objects). Create the secret
+# from local files instead. See RUNBOOK.md, sections 1.6 step 4 and 1.7 step 2:
+#
+#   kubectl create secret generic git-credentials \
+#     --from-file=id_ed25519="$HOME/lab-secrets/upload-app-deploy" \
+#     --from-file=identity="$HOME/lab-secrets/upload-app-deploy" \
+#     --from-file=known_hosts="$HOME/lab-secrets/known_hosts"
+#
+# Keys in the secret:
+#   id_ed25519   private deploy key, used by the git-clone task and the git-push step
+#   identity     same private key, the name Flux's GitRepository expects
+#   known_hosts  output of `ssh-keyscan github.com`
+#
+# Resulting secret (for reference only):
+#
+#   apiVersion: v1
+#   kind: Secret
+#   metadata:
+#     name: git-credentials
+#   data:
+#     id_ed25519: <base64 of the private key>
+#     identity: <base64 of the private key>
+#     known_hosts: <base64 of known_hosts>

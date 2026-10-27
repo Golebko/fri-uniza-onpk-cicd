@@ -1,0 +1,65 @@
+image:
+  repository: docker.io/<DOCKERHUB_USER>/upload-app
+  tag: 1.0.0
+
+service:
+  type: ClusterIP
+  port: 9080
+  targetPort: 9080
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: uploadapp.mydomain.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+
+appbackendDb:
+  user: mongoroot
+  password: mongotest
+
+mongodb:
+  # Bitnami moved its images: the chart default bitnami/mongodb:8.0.1-debian-12-r0 is gone.
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/mongodb
+    tag: 8.0.1-debian-12-r0
+    pullPolicy: IfNotPresent
+  # TCP probes instead of the default mongosh probes.
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
+  customLivenessProbe:
+    tcpSocket:
+      port: mongodb
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 6
+  customReadinessProbe:
+    tcpSocket:
+      port: mongodb
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: false
+  auth:
+    rootUser: mongoroot
+    rootPassword: mongotest
+  ## Tipy pre vase zadanie semestralnej prace:
+  # 1. zakomentujte si sekciu vyssie (auth a rootUser a rootPassword)
+  # 2. odkomentujte si sekciu nizsie a riadte sa pokynmi v komentaroch
+  #initdbScripts:
+  #  init_script.js: |
+  #  # Sem vlozite obsah init skriptu, ktory mate odkazany v zadani.
+  #  # Vsimnite si, ze v init skripte sa vytvara databaza s nazvom "platformsdb".
+  #  # Tzn. davajte si pozor na connection string, v zadani mate hint: mongodb://appbackend-mongodb:27017/dynamicky_nazov_db ,
+  #  # takze ten dynamicky nazov je databaza, ktoru vytvarate v init skripte.
+  #  # Pozor na spravne YAML formatovanie!

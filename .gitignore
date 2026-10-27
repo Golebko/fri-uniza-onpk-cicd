@@ -1,0 +1,18 @@
+# Credentials: never commit these
+config.json
+.dockerconfigjson
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*-deploy
+*-deploy.pub
+known_hosts
+lab-secrets/
+.env
+*.secret.yaml
+
+# Local leftovers
+*.bak
+.DS_Store
+node_modules/
