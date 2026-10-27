@@ -4,10 +4,10 @@ Lab material for the ONPK course at FRI UNIZA, lecture 7: CI/CD with **Tekton** 
 
 You build, push and deploy a small Node.js upload app (with MongoDB) in two ways:
 
-- **Lab 1, Demo 1:** one Tekton pipeline does everything: clone, build with buildah, push to Docker Hub, deploy with Helm.
+- **Lab 1, Demo 1:** one Tekton pipeline does everything: clone, build with buildah, push to the GitHub Container Registry (ghcr.io), deploy with Helm.
 - **Lab 2, Demo 2 (GitOps):** Tekton builds the image and commits the new image tag to Git. Flux watches the repo and deploys the Helm release. Rollback is a `git revert`.
 
-**Start here: [RUNBOOK.md](RUNBOOK.md).** Fork this repo first (RUNBOOK 1.4): the Lab 2 pipeline pushes commits to your own copy.
+**Start here: [RUNBOOK.md](RUNBOOK.md).** You need a GitHub account and a Kubernetes cluster (provided in the lab). Fork this repo first (RUNBOOK 1.4): the Lab 2 pipeline pushes commits to your own copy, and images go to `ghcr.io/<your-user>/fri-uniza-onpk-cicd`.
 
 ## Repo layout
 
@@ -17,7 +17,7 @@ helm/uploadapp/              Helm chart for the app (MongoDB subchart vendored i
   values-uploadapp.yaml      values the pipelines and Flux deploy with
 cicd/hello-world/            first Tekton Task + TaskRun
 cicd/upload-app-demo/
-  01-creds-docker.yaml       how to create the Docker Hub secret (no credentials in Git)
+  01-creds-docker.yaml       how to create the ghcr.io push/pull secrets (no credentials in Git)
   02-creds-github.yaml       how to create the Git deploy-key secret (no credentials in Git)
   03-rbac.yml                ServiceAccount + RBAC the pipelines run as
   10-pipeline-push.yaml      Demo 1 pipeline: clone, build info, buildah, helm deploy
@@ -30,7 +30,7 @@ cicd/github-trigger/         optional: Tekton Triggers EventListener for GitHub 
 RUNBOOK.md                   step-by-step instructions for both labs
 ```
 
-The files contain the placeholders `<GITHUB_USER>` and `<DOCKERHUB_USER>`. RUNBOOK 1.4 step 2 replaces them with one command.
+The files contain the placeholder `<GITHUB_USER>` (your GitHub user, lowercase). RUNBOOK 1.4 step 2 replaces it with one command.
 
 ## Versions
 

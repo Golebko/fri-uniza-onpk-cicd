@@ -1,6 +1,10 @@
 image:
-  repository: docker.io/<DOCKERHUB_USER>/upload-app
+  repository: ghcr.io/<GITHUB_USER>/fri-uniza-onpk-cicd   # lowercase
   tag: 1.0.0
+
+# GHCR packages are private by default: the cluster pulls with this secret (RUNBOOK 1.7)
+imagePullSecrets:
+  - name: ghcr-pull
 
 service:
   type: ClusterIP

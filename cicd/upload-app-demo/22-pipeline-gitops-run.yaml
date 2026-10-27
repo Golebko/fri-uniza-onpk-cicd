@@ -15,7 +15,7 @@ spec:
     - name: repo-branch
       value: "main"
     - name: image-name
-      value: "docker.io/<DOCKERHUB_USER>/upload-app"
+      value: "ghcr.io/<GITHUB_USER>/fri-uniza-onpk-cicd"
     - name: image-tag
       value: "1.0.2"                                                 # bump on every run
     - name: git-user-email

@@ -15,7 +15,7 @@ spec:
       default: "main"
     - name: image-name
       type: string
-      description: "Target image name, e.g. docker.io/<DOCKERHUB_USER>/upload-app"
+      description: "Target image name, e.g. ghcr.io/<GITHUB_USER>/fri-uniza-onpk-cicd"
     - name: image-tag
       type: string
     - name: git-user-name

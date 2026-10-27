@@ -1,5 +1,8 @@
 FROM node:current-alpine
 
+# Links the image (GitHub package) to your fork on ghcr.io
+LABEL org.opencontainers.image.source="https://github.com/<GITHUB_USER>/fri-uniza-onpk-cicd"
+
 WORKDIR /app
 
 COPY src/package.json .

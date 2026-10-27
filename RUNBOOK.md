@@ -3,9 +3,11 @@
 - **Lab 1 (today):** tools, Tekton, hello world, catalog tasks, credentials, RBAC, Demo 1 (CI + CD in one Tekton pipeline).
 - **Lab 2 (next week):** Demo 2 (Tekton CI + Flux CD, GitOps), closing the loop, rollback, optional Tekton Triggers and Flagger, cleanup.
 
-You work in **your own GitHub copy of this repo** (a fork, see 1.6). The Lab 2 pipeline pushes commits to that repo with your own deploy key, so it can't be the shared course repo.
+You work in **your own GitHub copy of this repo** (a fork, see 1.4). The Lab 2 pipeline pushes commits to that repo with your own deploy key, so it can't be the shared course repo.
 
-All manifests in `cicd/` are ready to use. The only edits you make are your account names: the placeholders `<GITHUB_USER>` (your GitHub user) and `<DOCKERHUB_USER>` (your Docker Hub user). Step 1.6.2 replaces them in all files with one command.
+You only need a GitHub account: the pipelines push the app image to the GitHub Container Registry (`ghcr.io/<GITHUB_USER>/fri-uniza-onpk-cicd`).
+
+All manifests in `cicd/` are ready to use. The only edit you make is your account name: the placeholder `<GITHUB_USER>` (your GitHub user name, **in lowercase**, because image names must be lowercase). 1.4 step 2 replaces it in all files with one command.
 
 Commands are bash, run from the root of your clone unless stated otherwise. On Windows, use **Git Bash** or WSL2 bash.
 
@@ -89,7 +91,7 @@ git remote set-url origin git@github.com:<GITHUB_USER>/fri-uniza-onpk-cicd.git
 git push -u origin main
 ```
 
-If you pick another repo name, also replace `fri-uniza-onpk-cicd` in the `cicd/` files in step 2.
+If you pick another repo name, also replace `fri-uniza-onpk-cicd` in the `app/`, `cicd/` and `helm/` files after step 2.
 
 The vendored MongoDB chart must be in the repo. The pipelines and Flux use it instead of downloading it:
 
@@ -97,23 +99,21 @@ The vendored MongoDB chart must be in the repo. The pipelines and Flux use it in
 git ls-files helm/uploadapp/charts      # helm/uploadapp/charts/mongodb-16.0.3.tgz
 ```
 
-### 2. Set your account names
+### 2. Set your GitHub user
 
-The files under `cicd/` and `helm/` contain the placeholders `<GITHUB_USER>` and `<DOCKERHUB_USER>`. Replace them all at once (works with GNU and macOS sed):
+The files under `app/`, `cicd/` and `helm/` contain the placeholder `<GITHUB_USER>` (repo URLs, image name `ghcr.io/<GITHUB_USER>/fri-uniza-onpk-cicd`, the image's source label). Replace it everywhere at once (works with GNU and macOS sed):
 
 ```bash
-GITHUB_USER=your-github-user          # CHANGE
-DOCKERHUB_USER=your-dockerhub-user    # CHANGE (lowercase)
+GITHUB_USER=your-github-user          # CHANGE, lowercase (e.g. JanNovak -> jannovak)
 
-grep -rlI -e '<GITHUB_USER>' -e '<DOCKERHUB_USER>' cicd helm \
-  | xargs sed -i.bak -e "s/<GITHUB_USER>/${GITHUB_USER}/g" -e "s/<DOCKERHUB_USER>/${DOCKERHUB_USER}/g"
-find cicd helm -name '*.bak' -delete
+grep -rlI '<GITHUB_USER>' app cicd helm | xargs sed -i.bak "s/<GITHUB_USER>/${GITHUB_USER}/g"
+find app cicd helm -name '*.bak' -delete
 
-grep -rnI -e '<GITHUB_USER>' -e '<DOCKERHUB_USER>' cicd helm    # no output = done
+grep -rnI '<GITHUB_USER>' app cicd helm    # no output = done
 git diff --stat
 
-git add cicd helm
-git commit -m "Set my GitHub and Docker Hub user"
+git add app cicd helm
+git commit -m "Set my GitHub user"
 git push
 ```
 
@@ -153,11 +153,12 @@ tkn task list          # hello, git-clone, buildah
 - `git-clone` clones a repo into a workspace.
 - `buildah` builds a container image from a Dockerfile and pushes it to a registry. Its build step runs privileged.
 
-## 1.6 Prerequisites: Docker Hub token, deploy key
+## 1.6 Prerequisites: GitHub token, deploy key
 
 ### 1. Look at `helm/uploadapp/values-uploadapp.yaml`
 
-These are the values the pipelines deploy with. Besides your image name (set in 1.4 step 2), two settings differ from the chart defaults:
+These are the values the pipelines and Flux deploy with. Besides your image name (set in 1.4 step 2), three settings differ from the chart defaults:
+- `imagePullSecrets: [{name: ghcr-pull}]`: new GHCR packages are private, so the cluster needs credentials to pull your image (secret created in 1.7).
 - `mongodb.image`: Bitnami moved its images, so the MongoDB chart's default image no longer exists. The file uses the `bitnamilegacy` copy.
 - `mongodb.customLivenessProbe` / `customReadinessProbe`: the chart's default MongoDB probes run `mongosh` and can time out. Simple TCP probes are more reliable.
 
@@ -180,10 +181,16 @@ mongodb:
 
 Why MongoDB matters: `app/src/middleware/upload.js` connects to MongoDB when the app starts. If MongoDB isn't reachable, the Node process dies, the pod crash-loops and `helm --wait` times out.
 
-### 2. Create a Docker Hub repo and access token
+### 2. Create a GitHub token for the container registry
 
-1. On hub.docker.com, create a **public** repository `upload-app`.
-2. Account settings → Personal access tokens → create a **Read & Write** token. Copy it.
+buildah pushes the image to `ghcr.io` with a GitHub **classic** personal access token (PAT). Fine-grained tokens don't work with the container registry.
+
+1. GitHub → your avatar → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token (classic)**.
+2. Note: `onpk-lab-ghcr`. Expiration: 30 days.
+3. Scopes: tick **`write:packages`** (this also selects `read:packages`). Nothing else is needed.
+4. **Generate token** and copy it (`ghp_…`). You only see it once.
+
+The same token pushes (buildah) and pulls (the cluster) the image. The first push creates a **private** package `fri-uniza-onpk-cicd` under your account; the `LABEL` in `app/Dockerfile` links it to your fork.
 
 ### 3. Create a GitHub deploy key with write access
 
@@ -208,24 +215,28 @@ ssh -i ~/lab-secrets/upload-app-deploy -o IdentitiesOnly=yes -o UserKnownHostsFi
 
 Create the secrets with `kubectl create secret … --from-file`. The repo files `01-creds-docker.yaml` / `02-creds-github.yaml` only document the result; never commit real credentials.
 
-### 1. Docker Hub credentials
+### 1. Container registry credentials (ghcr.io)
 
-Generate a `config.json` from your access token. The registry key must be `https://index.docker.io/v1/`.
+Two secrets from the same token (1.6 step 2):
+- `docker-credentials`: a `config.json` for **pushing**. The buildah task mounts it as its `dockerconfig` workspace, so `config.json` must be at the root of the secret (it is). The registry key is `ghcr.io`.
+- `ghcr-pull`: a `docker-registry` secret for **pulling**. `values-uploadapp.yaml` references it as `imagePullSecrets`, for both the Demo 1 Helm deploy and Flux.
 
 ```bash
-DOCKERHUB_USER=<DOCKERHUB_USER>
-read -rs DOCKERHUB_TOKEN          # paste the access token, press Enter
-AUTH=$(printf '%s:%s' "$DOCKERHUB_USER" "$DOCKERHUB_TOKEN" | base64 | tr -d '\n')
-printf '{"auths":{"https://index.docker.io/v1/":{"auth":"%s"}}}\n' "$AUTH" > ~/lab-secrets/config.json
-unset DOCKERHUB_TOKEN AUTH
+GITHUB_USER=<GITHUB_USER>
+read -rs GHCR_TOKEN               # paste the classic PAT, press Enter
+AUTH=$(printf '%s:%s' "$GITHUB_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')
+printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$AUTH" > ~/lab-secrets/config.json
 
 kubectl create secret generic docker-credentials \
   --from-file=config.json="$HOME/lab-secrets/config.json"
+kubectl create secret docker-registry ghcr-pull \
+  --docker-server=ghcr.io --docker-username="$GITHUB_USER" --docker-password="$GHCR_TOKEN"
+unset GHCR_TOKEN AUTH
 ```
 
 PowerShell alternative for the `auth` value: `[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("user:token"))`. Or run the bash commands in Git Bash.
 
-The buildah task mounts this secret as its `dockerconfig` workspace, so `config.json` must be at the root of the secret (it is).
+Alternative to the pull secret: after the first successful push (1.8), make the package public once. GitHub → your profile → **Packages** → `fri-uniza-onpk-cicd` → **Package settings** → **Change visibility** → Public. The `ghcr-pull` secret is then not needed (leave it in place, it does no harm).
 
 ### 2. Git credentials
 
@@ -259,7 +270,7 @@ The pipeline `cicd/upload-app-demo/10-pipeline-push.yaml`:
 
 1. `fetch-source` (catalog `git-clone`): clones your repo into the `shared-data` workspace, using the deploy key from `git-credentials`.
 2. `add-build-info`: writes `app/src/.env` with `BUILD_VERSION` (the image tag) and `BUILD_TIME`. The app shows them at `/info`.
-3. `buildah-build` (catalog `buildah`): builds `app/Dockerfile` and pushes `<image-name>:<image-tag>` with `docker-credentials`.
+3. `buildah-build` (catalog `buildah`): builds `app/Dockerfile` and pushes `<image-name>:<image-tag>` to ghcr.io with `docker-credentials`.
 4. `deploy-app`: `helm lint`, then `helm upgrade --install uploadapp … --set image.repository=… --set image.tag=… --wait`. `helm dependency list` only checks the vendored `charts/mongodb-16.0.3.tgz`; nothing is downloaded.
 
 Read the file, then look at the PipelineRun `cicd/upload-app-demo/11-pipeline-push-run.yaml` (shown here with placeholders; yours has your names since 1.4 step 2):
@@ -282,7 +293,7 @@ spec:
     - name: repo-revision
       value: "main"
     - name: image-name
-      value: "docker.io/<DOCKERHUB_USER>/upload-app"                 # fully qualified for buildah
+      value: "ghcr.io/<GITHUB_USER>/fri-uniza-onpk-cicd"              # lowercase
     - name: image-tag
       value: "1.0.0"
     - name: build-extra-args
@@ -334,7 +345,7 @@ securityContext:
 EOF
 tkn pipeline start clone-build-push-deploy \
   -p repo-url=git@github.com:<GITHUB_USER>/fri-uniza-onpk-cicd.git -p repo-revision=main \
-  -p image-name=docker.io/<DOCKERHUB_USER>/upload-app -p image-tag=1.0.1 \
+  -p image-name=ghcr.io/<GITHUB_USER>/fri-uniza-onpk-cicd -p image-tag=1.0.1 \
   -w name=shared-data,volumeClaimTemplateFile=/tmp/pvc.yaml \
   -w name=git-credentials,secret=git-credentials \
   -w name=dockerconfig,secret=docker-credentials \
@@ -409,11 +420,13 @@ kubectl describe helmrelease uploadapp
 | Symptom | Cause / fix |
 |---|---|
 | `failed calling webhook "webhook.pipeline.tekton.dev" … connection refused` | Tekton webhook not Ready yet. `kubectl -n tekton-pipelines get pods`, wait, retry |
-| fetch-source fails on `<GITHUB_USER>` / `<DOCKERHUB_USER>` in a URL | Placeholders not replaced: redo 1.4 step 2, commit, push |
+| fetch-source / buildah fails on `<GITHUB_USER>` in a URL or image name | Placeholder not replaced: redo 1.4 step 2, commit, push |
 | `Host key verification failed` in fetch-source | `known_hosts` missing or wrong in `git-credentials` |
 | `Permission denied (publickey)` | Deploy key not added, wrong repo, or the secret key isn't named `id_ed25519` / `id_rsa` |
 | git-push `ERROR: The key you are authenticating with has been marked as read only` | Deploy key needs **Allow write access** |
-| buildah `unauthorized` / `requested access to the resource is denied` | Bad token, token not Read & Write, `config.json` key not `https://index.docker.io/v1/`, or image name not under your Docker Hub user |
+| buildah `unauthorized` / `denied` / `permission_denied: The token provided does not match expected scopes` | Token is not a classic PAT with `write:packages`, `config.json` key is not `ghcr.io`, or the image name is not `ghcr.io/<your lowercase user>/…` |
+| buildah `invalid reference format: repository name must be lowercase` | Your user in the image name has uppercase letters: use lowercase in 1.4 step 2 |
+| App pod `ImagePullBackOff` / `ErrImagePull` … `unauthorized` or `denied` | `ghcr-pull` secret missing or wrong (1.7 step 1), or make the package public |
 | PVC `Pending` | Normal until the first pod is scheduled. If it stays Pending, check `kubectl get storageclass` has a default |
 | helm `context deadline exceeded` | Usually MongoDB not Ready: check the mongodb pod and events |
 | MongoDB `ImagePullBackOff` | Check the `mongodb.image` block in `values-uploadapp.yaml` (1.6 step 1) |
@@ -529,7 +542,7 @@ spec:
     - name: repo-branch
       value: "main"
     - name: image-name
-      value: "docker.io/<DOCKERHUB_USER>/upload-app"
+      value: "ghcr.io/<GITHUB_USER>/fri-uniza-onpk-cicd"
     - name: image-tag
       value: "1.0.2"                                                 # bump on every run
     - name: git-user-email
@@ -725,8 +738,9 @@ kubectl delete -f cicd/github-trigger/github-eventlistener-interceptor.yml --ign
 sudo sed -i.bak '/uploadapp.mydomain.local/d' /etc/hosts
 
 # credentials
-kubectl delete secret docker-credentials git-credentials --ignore-not-found
+kubectl delete secret docker-credentials ghcr-pull git-credentials --ignore-not-found
 rm -rf ~/lab-secrets
 # GitHub: your repo -> Settings -> Deploy keys -> delete the lab key
-# Docker Hub: Account settings -> Personal access tokens -> revoke the lab token
+# GitHub: Settings -> Developer settings -> Personal access tokens (classic) -> delete the lab token
+# optional: your profile -> Packages -> fri-uniza-onpk-cicd -> Package settings -> Delete this package
 ```

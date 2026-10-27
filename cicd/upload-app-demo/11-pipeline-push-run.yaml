@@ -15,7 +15,7 @@ spec:
     - name: repo-revision
       value: "main"
     - name: image-name
-      value: "docker.io/<DOCKERHUB_USER>/upload-app"                 # fully qualified for buildah
+      value: "ghcr.io/<GITHUB_USER>/fri-uniza-onpk-cicd"                 # lowercase
     - name: image-tag
       value: "1.0.0"
     - name: build-extra-args

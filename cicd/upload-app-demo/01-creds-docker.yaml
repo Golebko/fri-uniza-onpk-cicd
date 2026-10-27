@@ -1,18 +1,23 @@
-# Docker Hub credentials: do NOT put real credentials in this repo.
+# Container registry (ghcr.io) credentials: do NOT put real credentials in this repo.
 #
-# This file is intentionally empty (no Kubernetes objects). Create the secret
-# from a local config.json instead. See RUNBOOK.md, section 1.7, step 1:
+# This file is intentionally empty (no Kubernetes objects). Create the secrets
+# from your GitHub classic PAT (scope write:packages) instead. See RUNBOOK.md, section 1.7, step 1:
 #
-#   DOCKERHUB_USER=<DOCKERHUB_USER>
-#   read -rs DOCKERHUB_TOKEN          # paste your Docker Hub access token, press Enter
-#   AUTH=$(printf '%s:%s' "$DOCKERHUB_USER" "$DOCKERHUB_TOKEN" | base64 | tr -d '\n')
-#   printf '{"auths":{"https://index.docker.io/v1/":{"auth":"%s"}}}\n' "$AUTH" > ~/lab-secrets/config.json
-#   unset DOCKERHUB_TOKEN AUTH
+#   GITHUB_USER=<GITHUB_USER>
+#   read -rs GHCR_TOKEN               # paste your classic PAT, press Enter
+#   AUTH=$(printf '%s:%s' "$GITHUB_USER" "$GHCR_TOKEN" | base64 | tr -d '\n')
+#   printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$AUTH" > ~/lab-secrets/config.json
 #
+#   # push: used by the buildah task (dockerconfig workspace)
 #   kubectl create secret generic docker-credentials \
 #     --from-file=config.json="$HOME/lab-secrets/config.json"
 #
-# Resulting secret (for reference only):
+#   # pull: used by the app pods (imagePullSecrets in values-uploadapp.yaml)
+#   kubectl create secret docker-registry ghcr-pull \
+#     --docker-server=ghcr.io --docker-username="$GITHUB_USER" --docker-password="$GHCR_TOKEN"
+#   unset GHCR_TOKEN AUTH
+#
+# Resulting push secret (for reference only):
 #
 #   apiVersion: v1
 #   kind: Secret
